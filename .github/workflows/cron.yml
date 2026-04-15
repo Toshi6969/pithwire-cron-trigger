@@ -22,7 +22,7 @@ jobs:
             echo ""
             echo "=== Processing $LANG ==="
             curl -sS --max-time 300 -w "\nHTTP:%{http_code} time:%{time_total}s\n" \
-              "https://pithwire.com/run-news?key=${{ secrets.RUN_KEY }}&lang=$LANG&limit=10" || echo "(lang=$LANG failed, continuing)"
+              "https://pithwire.com/run-news?key=${{ secrets.RUN_KEY }}&lang=$LANG&limit=8" || echo "(lang=$LANG failed, continuing)"
             sleep 3
           done
           echo ""
