@@ -1,13 +1,14 @@
-name: PithWire Cron Trigger
+name: PithWire Cron Trigger (Failover for CF scheduled)
 
-# CF-CF ループ問題（Error 1000）を回避するため、CFの外側から /run-news を叩く。
-# Claude Code Routines はサンドボックスで外部host制限があり不可（2026-04-15確認）。
-# GitHub Actions から5言語順次 curl する構成。
+# CF scheduled() + AI Gateway が本線（wrangler.toml の [triggers] :07 UTC）。
+# 本 GHA は :13 UTC で失敗時の catchup として動く:
+#   - catchup=1 → worker 側で last_run < 5h なら即 skip（平常時ほぼノーコスト）
+#   - scheduled() が Error 1000 等で失敗した場合のみ実質動作
 # Public repo なので Actions 無制限無料。
 
 on:
   schedule:
-    - cron: '7 */6 * * *'   # 1日4回（0:07, 6:07, 12:07, 18:07 UTC）素数分
+    - cron: '13 */6 * * *'   # 1日4回（0:13, 6:13, 12:13, 18:13 UTC）素数分、CF :07 の 6 分後
   workflow_dispatch:         # 手動トリガー
 
 jobs:
@@ -15,14 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Trigger 5-language distribution
+      - name: Trigger 5-language distribution (catchup only if CF scheduled failed)
         run: |
           echo "Starting at $(date -u +%H:%M:%S) UTC"
           for LANG in ja en ko hi id; do
             echo ""
             echo "=== Processing $LANG ==="
             curl -sS --max-time 300 -w "\nHTTP:%{http_code} time:%{time_total}s\n" \
-              "https://pithwire.com/run-news?key=${{ secrets.RUN_KEY }}&lang=$LANG&limit=8" || echo "(lang=$LANG failed, continuing)"
+              "https://pithwire.com/run-news?key=${{ secrets.RUN_KEY }}&lang=$LANG&limit=8&catchup=1" || echo "(lang=$LANG failed, continuing)"
             sleep 3
           done
           echo ""
