@@ -1,0 +1,23 @@
+name: Keepalive (prevent 60-day auto-disable)
+
+on:
+  schedule:
+    - cron: '23 3 1 * *'   # Monthly 1st, 03:23 UTC (2033 uses :17, offset to avoid collision)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bump .keepalive timestamp
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          git add .keepalive
+          git diff --cached --quiet || git commit -m "chore: keepalive $(date -u +%Y-%m-%d)"
+          git push
