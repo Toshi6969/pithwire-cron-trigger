@@ -8,7 +8,9 @@ name: PithWire Cron Trigger (Failover for CF scheduled)
 
 on:
   schedule:
-    - cron: '13 */6 * * *'   # 1日4回（0:13, 6:13, 12:13, 18:13 UTC）素数分、CF :07 の 6 分後
+    - cron: '31 */6 * * *'   # 1日4回（0:31, 6:31, 12:31, 18:31 UTC）素数分、CF :07 の 24 分後
+                             # ※ GHA は ±15分の jitter あり。20分以上離さないと race で
+                             # catchup が CF を追い越す事故が発生する（2033 Journey 2026-04-15 実測）
   workflow_dispatch:         # 手動トリガー
 
 jobs:
