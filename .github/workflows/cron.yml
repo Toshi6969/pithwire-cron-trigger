@@ -1,15 +1,20 @@
 name: PithWire Cron Trigger (Failover for CF scheduled)
 
 # CF scheduled() + AI Gateway が本線（wrangler.toml の [triggers] :07 UTC）。
-# 本 GHA は :13 UTC で失敗時の catchup として動く:
-#   - catchup=1 → worker 側で last_run < 5h なら即 skip（平常時ほぼノーコスト）
-#   - scheduled() が Error 1000 等で失敗した場合のみ実質動作
+# 本 GHA は :31 UTC で失敗時の catchup として動く:
+#   - catchup=1 → worker 側で last_run < 4h なら即 skip（平常時ほぼノーコスト）
+#   - scheduled() が失敗 / 発火をスキップした場合のみ実質動作
 # Public repo なので Actions 無制限無料。
+#
+# 2026-09-11 更新:
+#   - fr を対象言語に追加（Phase 5.1 で追加された 6 言語目、それまで failover から漏れていた）
+#   - CF WAF に "Allow PithWire cron" custom rule を配置し、Super Bot Fight Mode の
+#     Managed Challenge をスキップ（以前は全 curl 呼び出しが 403 で silent-fail していた）
 
 on:
   schedule:
     - cron: '31 */6 * * *'   # 1日4回（0:31, 6:31, 12:31, 18:31 UTC）素数分、CF :07 の 24 分後
-                             # ※ GHA は ±15分の jitter あり。20分以上離さないと race で
+                             # ※ GHA は free tier で 2-5h 遅延の実績あり。20分以上離さないと race で
                              # catchup が CF を追い越す事故が発生する（2033 Journey 2026-04-15 実測）
   workflow_dispatch:         # 手動トリガー
 
@@ -18,10 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Trigger 5-language distribution (catchup only if CF scheduled failed)
+      - name: Trigger 6-language distribution (catchup only if CF scheduled failed)
         run: |
           echo "Starting at $(date -u +%H:%M:%S) UTC"
-          for LANG in ja en ko hi id; do
+          for LANG in ja en ko hi id fr; do
             echo ""
             echo "=== Processing $LANG ==="
             curl -sS --max-time 300 -w "\nHTTP:%{http_code} time:%{time_total}s\n" \
