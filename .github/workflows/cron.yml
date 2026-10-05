@@ -10,6 +10,10 @@ name: PithWire Cron Trigger (Failover for CF scheduled)
 #   - fr を対象言語に追加（Phase 5.1 で追加された 6 言語目、それまで failover から漏れていた）
 #   - CF WAF に "Allow PithWire cron" custom rule を配置し、Super Bot Fight Mode の
 #     Managed Challenge をスキップ（以前は全 curl 呼び出しが 403 で silent-fail していた）
+#
+# 2026-10-05 更新:
+#   - `|| echo` で失敗を握りつぶすのをやめた。HTTP ステータスと JSON の success を検査し、
+#     1 言語でも失敗したら最後に exit 1 (ジョブが赤くなり GitHub から通知が届く)
 
 on:
   schedule:
@@ -24,14 +28,35 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Trigger 6-language distribution (catchup only if CF scheduled failed)
+        env:
+          RUN_KEY: ${{ secrets.RUN_KEY }}
         run: |
+          # Each language must return HTTP 200 + JSON {"success":true} (skip or real run),
+          # or "lock held" (another run already in progress). Anything else -- CF challenge
+          # HTML (403), 5xx, timeout, {"success":false} -- is a failure. Remaining languages
+          # still run, but the job fails at the end so GitHub notifies instead of staying green.
+          # (Previously `|| echo` swallowed every failure: 403s went unnoticed for months.)
           echo "Starting at $(date -u +%H:%M:%S) UTC"
+          FAILED=""
           for LANG in ja en ko hi id fr; do
             echo ""
             echo "=== Processing $LANG ==="
-            curl -sS --max-time 300 -w "\nHTTP:%{http_code} time:%{time_total}s\n" \
-              "https://pithwire.com/run-news?key=${{ secrets.RUN_KEY }}&lang=$LANG&limit=8&catchup=1" || echo "(lang=$LANG failed, continuing)"
+            HTTP=$(curl -sS --max-time 300 -o body.txt -w "%{http_code}" \
+              "https://pithwire.com/run-news?key=${RUN_KEY}&lang=$LANG&limit=8&catchup=1") || HTTP="curl-error"
+            BODY=$(head -c 600 body.txt 2>/dev/null)
+            echo "HTTP:$HTTP"
+            echo "$BODY"
+            if [ "$HTTP" = "200" ] && jq -e '.success == true or ((.error // "") | test("lock held"))' body.txt >/dev/null 2>&1; then
+              echo "OK: $LANG"
+            else
+              echo "::error title=PithWire cron $LANG failed::HTTP=$HTTP body=$(echo "$BODY" | tr '\n' ' ' | head -c 200)"
+              FAILED="$FAILED $LANG"
+            fi
             sleep 3
           done
           echo ""
           echo "All languages processed at $(date -u +%H:%M:%S) UTC"
+          if [ -n "$FAILED" ]; then
+            echo "Failed languages:$FAILED"
+            exit 1
+          fi
